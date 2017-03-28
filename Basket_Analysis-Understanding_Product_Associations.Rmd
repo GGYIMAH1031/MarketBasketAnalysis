@@ -1,0 +1,312 @@
+---
+title: 'Market Basket Analysis'
+author: "Godfred Somua-Gyimah"
+date: "March 15, 2017"
+output: 
+  pdf_document: 
+    toc: yes
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+&nbsp;
+&nbsp;
+
+
+# INTRODUCTION
+
+One of the key techniques used by large retailers is called Market Basket Analysis, which uncovers associations between products by looking for combinations of products that frequently co-occur in transactions. In other words, it allows retailers to identify relationships between the products that people buy together. Market Basket Analysis is a modelling technique based upon the theory that if you buy a certain group of items, you are more (or less) likely to buy another group of items.For example, customers that buy a pencil and paper are likely to buy a rubber or ruler. In this project, we will be using the Apriori Algorithm to generate a set of rules that link two or more products together. 
+
+
+Other Application Areas of this analysis include: 
+
+  1. Analysis of credit card purchases.
+  2. Analysis of telephone calling patterns.
+  3. Identification of fraudulent medical insurance claims. 
+  4. Analysis of telecom service purchases.
+
+
+
+
+**Note**: In order to run this demo, the following R packages must be installed in your R environment:
+
+- arules: mining association rules
+- magrittr: forward pipe operator
+- arulesViz: data visualization of association rules
+- RColorBrewer: color palettes for plots
+
+
+\newpage
+
+```{r}
+# Clean the environment
+rm(list = ls())
+# Load the arules package for mining association rules
+library(arules) # mining association rules
+library(magrittr) # forward pipe operator
+
+```
+
+# 1. Understand Dataset
+
+Suppose we extract transaction-item relationship from a transactional database. The dataset is stored in a csv file. Now we use read.csv() method to read in the raw dataset.
+
+```{r}
+# Read in transaction dataset
+df<- read.csv("groceries_raw.csv")
+```
+
+```{r}
+# Show the head of the raw dataset
+head(df)
+
+```
+
+The first column indicates the transaction ID. The second column is the item included in the transaction. The third and fourth columns are item categories ate different levels. As the above table shows, there are four items (citrus fruit, semi-finished bread, margarine, and ready soup) in the first transaction.
+
+Let's check the structure of the dataset.
+```{r}
+# Show the structure of the dataset
+str(df)
+```
+
+Because the transaction ID should be a categorical variable, we change it as a factor.
+
+```{r}
+# Show the structure of the dataset
+df$TransactionID <- factor(df$TransactionID)
+```
+
+Let's check the structure of the dataset again.
+
+```{r}
+# Show the structure of the dataset
+str(df)
+```
+
+As the data structure shows, the raw dataset contains 9835 transactions containing combination of 169 items. Those items belong to 10 categories at level 1, and 55 categoris at level 2.
+
+```{r}
+# Show all level 1 categories
+levels(df$ItemCategory1)
+```
+
+# 2. Assocition Rules at Item Category Level
+
+Now, we choose the item category 1 as the level of items. We need to construct a transactions object. So, we use the read.transactions() method in arules package to read the transaction data file from disk and creates a transactions object at the item category 1 level. Notice that the item category 1 is stored in the 3rd column. We need to use "rm.duplicates = TRUE" to remove duplicates since the transactin raw dataset contains two or more items in a transaction that belong to the same category 1.
+
+```{r}
+
+trans_cat2<- read.transactions(file = "groceries_raw.csv", 
+                              format = "single", sep = ",",rm.duplicates = TRUE,
+                              cols = c(1,3), skip = 1)
+```
+
+```{r}
+# Show a summary of the transactions dataset
+trans_cat2
+```
+
+We can see that the transactions dataset contains 9835 transactions of 10 item categories.
+
+Now, let's check all 10 item categories that are bought in those transactions.
+
+```{r}
+itemFrequencyPlot(trans_cat2,topN=10,col="blue",type="absolute")
+```
+
+```{r}
+itemFrequencyPlot(trans_cat2,topN=10,col="blue",type="relative")
+```
+
+Plot item frequency / support for all 10 item categories.
+
+```{r, fig.height= 8.5, fig.width=11}
+itemFrequencyPlot(trans_cat2, cex.names=1, xlim = c(0,0.8),
+  type = "relative", horiz = TRUE, col = "blue", las = 1,
+  xlab = paste("Proportion of Market Baskets Containing Item",
+    "\n(Item Relative Frequency or Support)"))
+```
+
+Now, let's call the apriori() method to generate association rules. We set the minimun support as 0.001 and the minimum confidence as 0.05.
+```{r}
+# Mine frequent itemsets, association rules or association hyperedges using the Apriori algorithm.
+first.rules <- apriori(trans_cat2, 
+                       parameter = list(support = 0.001, confidence = 0.05))
+```
+
+Show summary of the 1st set of association rules.
+```{r}
+summary(first.rules)
+```
+
+We notice that the Apriori algorithm detects 4294 rules from the dataset by using the parameters (minimun support=0.001, minimum confidence=0.05). The rule set is still too many to analyze.
+
+In order to reduce the number of association rules generated, we can enlarge the minimum support and confidence setting. Now, let's set minimun support=0.02 and keep minimum confidence=0.05 and call apriori() method again. 
+
+
+```{r}
+# Mine frequent itemsets, association rules or association hyperedges using the Apriori algorithm.
+second.rules <- apriori(trans_cat2, 
+                        parameter = list(support = 0.02, confidence = 0.05))
+```
+```{r}
+# Show summary of the association rule
+summary(second.rules)
+```
+
+Now, we get 509 rules, much less than the 1st set of 4294 rules. However, some rules have lift values less than 1.0.
+
+Generally, a lift value less than 1.0 impllies that the RHS item(s) is unlikely to be bought when the LHS item(s) are bought. In contrast, a lift greater than 1.0 implies that the RHS item(s) is likely to be bought when the item(s) on the LHS are bought. So, we will later subset the second.rules to select only rules with high fidelity and confidence.
+
+
+A picture says a thousand words. For now, we can visualize the association rules. To do that, we first need to load two packages: "arulesViz"" for association rules plot, and "RColorBrewer" for generating color palettes for graphs. Note that "arulesViz" requires the 'grid' package to be loaded also.
+
+```{r}
+library(grid)
+library(arulesViz)  # data visualization of association rules
+library(RColorBrewer)  # color palettes for plots
+```
+
+
+Grouped matrix-based visualization of all association rules.
+
+```{r, fig.width=12, fig.height=15}
+# grouped matrix of rules 
+plot(second.rules, 
+     method="grouped", 
+     control=list(col = rev(brewer.pal(9, "Blues")[4:9]), main = ""))
+```
+
+
+Draw all 509 rules in a scatter plot.
+
+```{r, fig.width=8.5, fig.height=8.5}
+# Data visualization of association rules in scatter plot
+plot(second.rules, 
+     control=list(jitter=2, col = rev(brewer.pal(9, "BuPu")[4:9])),
+     shading = "lift")   
+```
+
+From the scatter plot, while most items with very high lift values (>1.6) are bought less frequently (less than 10% of all transactions), other items with relatively lower lift values (1.2 - 1.6) are so popular that they have the potential to significantly influence profit margins.
+
+Therefore, we will consider a subset of second.rules which are the rules for items that are bought atleast 10% of the time in all transactions (support = 0.10) with very strong association rules (i.e. lift >= 1.0) 
+
+```{r}
+second_sub <- subset(second.rules, lift >= 1.0)
+second_sub <- subset(second_sub, support >= 0.10)
+
+inspect(second_sub[1:20])
+
+```
+
+The results above and the plot below show that the most popular products are drinks, fresh products, fruits and vegetables and these are bought by more than 40% of all customers. For example, almost 68% of customers have fresh products in their shopping baskets, regardless of what else they bought. Atleast 49% of all customers buy both fresh products and drinks whilst 42% of customers buy fruits and vegetables.   
+
+
+The grouped matrix-based visualization below shows all 53 association rules. 
+
+```{r, fig.width=10, fig.height=10}
+# grouped matrix of rules 
+plot(second_sub, 
+     method="grouped", 
+     control=list(col = rev(brewer.pal(9, "Blues")[4:9]), main = ""))
+```
+
+Now, we will sort out the rules in decreasing order according to their association (lift).
+```{r}
+# Sort by lift.
+top.second_sub <- second_sub %>% sort(decreasing = TRUE, by = "lift") %>% head(53)
+
+# Display the top 20 rules
+inspect(top.second_sub[1:20]) 
+```
+
+We will go ahead to visualize the top 20 association rules as grouped matrix, which will be easier to analyze.
+```{r, fig.height=8}
+# grouped matrix of rules 
+plot(top.second_sub[1:20], 
+     method="grouped", 
+     control=list(col = rev(brewer.pal(9, "Blues")[4:9]), main = ""))
+```
+From the rules displayed and the above visualization, the following conclusions can be drawn:
+
+1. Customers who buy fruits, vegetables and fresh products are very likely to buy processed foods also.
+Such customers make up about 10.7% of the total customers.
+
+2. Customers who buy fruits, vegetables and fresh products are also very likely to buy meat and sausage.
+About 16% of all customers fall into this category.  
+
+3. 18.6% of customers will most likely buy fruit and vegetables as well as meat and sausage. 
+
+4. Generally, the top 8 rules indicate strong associations between four item categories namely:
+
+- fresh products, 
+- fruit and vegetables
+- meat and sausage
+- processed food
+
+5. Customers who buy processed foods and canned foods are also very likey to purchase fruits and vegetables.
+
+6. Similarly, customers who purchase drinks and fresh products are likely to purchase meat and sausage.
+
+7. Non-food items, Snacks and candies are among the least popular items in the store.
+
+
+
+# Draw the graph of the top 20 association rules.
+
+```{r, fig.width=8, fig.height=10}
+plot(top.second_sub[1:20], method="graph",   
+  control=list(type="items"), 
+  shading = "lift")
+
+```
+
+CONCLUSION
+
+The results and analyses above suggest the following:
+
+1.The most popular products at this store are:
+- drinks
+- fresh products and
+- fruits and vegetables
+
+These items are bought by more than 40% of all customers. For example, almost 68% of customers have fresh products in their shopping baskets, regardless of what else they buy. Atleast 49% of all customers buy both fresh products and drinks whilst 42% of customers buy fruits and vegetables.
+
+2. Customers who buy fruits, vegetables and fresh products are very likely to buy processed foods also.
+Such customers make up about 10.7% of the total customers.
+
+3. Customers who buy fruits, vegetables and fresh products are also very likely to buy meat and sausage.
+About 16% of all customers fall into this category.  
+
+4. 18.6% of customers will most likely buy fruit and vegetables as well as meat and sausage. 
+
+5. Customers who buy processed foods and canned foods are also very likey to purchase fruits and vegetables.
+
+6. Similarly, customers who purchase drinks and fresh products are likely to purchase meat and sausage. 
+
+7. Generally, the top 8 rules indicate strong associations between four item categories namely:
+
+- fresh products, 
+- fruit and vegetables
+- meat and sausage
+- processed food
+
+The result suggests that these items / item categories are almost always bought together by most customers.
+
+Based on the above analyses, the following business recommendations are suggested:
+
+
+1. Drinks, fresh products and fruits & vegetables are the most popular items at the store. 40% to 67% of customers will buy one or more of these items at any given visit to the store. Therefore, these items must be placed so that they are very accessible and can easily be seen by all customers who visit the store. 
+
+
+2. Also, since these items are already popular, there is no need for promotional discounts for them. Promotional discounts may be targeted at non-food items, snacks and candies, which are among the least popular products at the store. 
+
+
+3. About 15% to 20% of customers buy fresh products, fruit & vegetables, meat & sausage and processed food together. Therefore, these items should all be placed very close together in the store. They may be positioned either on the same shelf or in aisles that are in very close proximity. For the online store, advertisements of these items should be targeted at customers who buy some of the other items in the group. In the physical store, cashiers should prompt / recommend products in these groups to customers who buy atleast 2 other items in the groups. 
+
+4. Since these 4 item categories are often bought together, promotional discounts may be applied to just one of the four item sets at a time, instead of all four.  
+
